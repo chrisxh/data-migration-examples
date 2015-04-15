@@ -1,14 +1,27 @@
+import logging
+import logging.config
+import yaml
+
 import json
 import re
 import requests 
+
+from ConfigParser import SafeConfigParser
+
 from utils import fieldval, XmlReader
 
+
+configDict = yaml.load(open('logging-config.yml', 'r'))
+logging.config.dictConfig(configDict)
+
+import_logger = logging.getLogger('import_log')
+logger  = logging.getLogger('console')
 
 
 
 def read_all_pages(url, headers=None):
     while True:
-        print url 
+        logger.debug('read_all_pages: %s' % url)
         r = requests.get(url, headers=headers)
         resp = json.loads(r.content)
 
@@ -51,23 +64,30 @@ class EmpClient(object):
 
         if not id:
             url = self.list_url
-            # print url, auth
+            # logger.debug(url)
             res = requests.post(url, data=json.dumps(data), headers=headers)
         else:
             raise NotImplementedError("update is not implemented")
 
         if res.status_code not in [200, 201]: 
-            print res.status_code 
-            print res.content
-        res.raise_for_status()
-        print 'saved: {}'.format(data['name'])
+            logger.info('failed for record: %s, status_code=%s' % (data['name'], res.status_code))
+            import_logger.error('failed to import data: %s', data)
+            import_logger.error(res.content)            
+            return False 
+
+        #res.raise_for_status()
+        #print 'saved: {}'.format(data['name'])
+        return True
+
+
 
 
 
 class Parser(object):
-    def __init__(self, node):
+    def __init__(self, node, reader):
         self.node = node 
-        self.id = int(fieldval(node, 'id'))
+        company_id = self.id = int(fieldval(node, 'id'))
+        self.users = reader.get_users_for_id(company_id)
 
     def record_identity(self):
         """ get identity for the failed record """
@@ -76,73 +96,141 @@ class Parser(object):
             if val:
                 return '{}={}'.format(k, val)
 
+    def _fix_url(self, url):
+        if url and not re.match(r'http(s)?:', url):
+           url = 'http://{}'.format(url) 
+        return url
+
     def get_data(self):
         n = self.node 
-        company_name = fieldval(n, 'name')        
-        full_name = fieldval(n, 'full_name')
+        company_name = fieldval(n, 'name')                
 
-        if not company_name or not full_name: 
+        if not company_name: 
             return
 
-        name_parts = full_name.split(' ')
-        first_name = name_parts[0]
-        last_name = ' '.join(name_parts[1:])        
+        users = [] 
+        for full_name,email in self.users:            
+            name_parts = full_name.split(' ')
+            first_name = name_parts[0]
+            last_name = ' '.join(name_parts[1:])        
+            u = {
+                'first_name': first_name, 
+                'last_name': last_name, 
+                'email': email
+            }
+            users.append(u)
+
+        assert users, "must have at least one user: %s" % self.id
 
         return {
             'name': company_name, 
-            'old_id': fieldval(n, 'id'), 
-            'url': fieldval(n, 'url'), 
-            'users': [{
-                'first_name': first_name, 
-                'last_name': last_name, 
-                'email': fieldval(n, 'email')
-            }]
+            'old_id': self.id, 
+            'url': self._fix_url(fieldval(n, 'url')), 
+            'users': users
         }
+
+
+
+from collections import defaultdict
+
+class GroupUsersReader(object):
+    """ quick modification on standard reader that reads though the data 
+        and groups users 
+        it introduces new method, that can be used for the data access 
+    """
+    def __init__(self, reader):
+        self.reader = reader 
+        users = self.users = defaultdict(list)
+
+        nodes = self.nodes = [] 
+        for node in reader.read():
+            id = fieldval(node, 'id')      
+            user = (fieldval(node, 'full_name'), fieldval(node, 'email'))
+
+            if not id or not user[0] or not user[1]:
+                continue
+                        
+            if not users.has_key(id):
+                nodes.append(node)
+
+            # print id, user 
+            users[id].append(user)
+
+    def get_users_for_id(self, id):
+        #print 'get_users_for_id: %s, has_key: %s' %  (id, self.users.has_key(id))
+        #print self.users.keys()
+        return self.users[str(id)]
+
+    def read(self):
+        for node in self.nodes:
+            yield node 
+
+
+
+
+def cleanup_data(reader):
+    # users are listed under the same name of the company/id
+    # must be treated as users for the same company 
+    return GroupUsersReader(reader)
+
 
 
 def run(client, reader, limit=None):
     # read all existing, don't send a request if data is already there 
     
-    total = 1
-    failed = 0
+    total = 0
+    success_count = 0
+    skipped = 0
     existing = client.get_existing_ids()
+    processed_ids = []
     for node in reader.read():
-        parser = Parser(node)
-        if parser.id in existing:
+        parser = Parser(node, reader)
+        id = parser.id 
+        if id in existing:
+            logger.debug('skipping : %s' % id)
+            skipped +=1
             continue 
+
+        assert not id in processed_ids 
+        processed_ids.append(id) # ensuring that we do not process more than once       
 
         data = parser.get_data()
 
         if data:
-            client.save(data)
-            #print 'successfull for: {}'.format(data['name'])
+            is_successful = client.save(data)
+            if is_successful:
+                success_count+=1
+            logger.info('successfull for: {}'.format(data['name']))
         else:
-            print 'failed, data problem for: {}'.format(parser.record_identity())
-            failed +=1
+            import_logger.error('failed, data problem for: {}'.format(parser.record_identity()))
         total +=1
 
         if limit and total > limit: 
-            print 'reached the limit'
+            logger.info('reached the limit: {}, stopping'.format(limit) )
             break
         if total % 10 == 0:
-            print 'processing record %s' % total  
+            logger.info('processing record %s' % total)  
 
-    print 'parsed: {} records, {} are failed'.format(total, failed)
+    logger.info('parsed {} records, {} are successfull, {} are failed, {} skipped'.format(total, success_count, (total - success_count), skipped))
 
 
-# TODO: 
-# users are listed under the same name of the company 
-# must be treated as users for the same company 
-# example : Medtronic
+
+def get_config():
+    from ConfigParser import SafeConfigParser
+    config = SafeConfigParser()
+    config.read('config.ini')
+    return config
 
 if __name__ == '__main__':
-    url = 'http://docker:8008'
-    key_secret = 'AKDH6G1O7/x5zmubeuovdnb'
-    file_name = 'Companies_ALL_email and full name.xml'
+    config = get_config()
+    url = config.get('destination', 'url')
+    key_secret = '{}/{}'.format(config.get('destination', 'api_key'), config.get('destination', 'api_secret'))
+    file_name = config.get('source', 'file')
 
     client = EmpClient(url, key_secret)
     
     reader = XmlReader(file_name)
+    reader = cleanup_data(reader)
 
     run(client, reader)
 

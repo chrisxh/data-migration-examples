@@ -1,0 +1,7 @@
+[destination]
+url = http://localhost
+api_key = AKXXXXXXX
+api_secret = yyyyyyyyyyy
+
+[source]
+file = data_samle.xml
