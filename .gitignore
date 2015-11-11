@@ -1,4 +1,6 @@
 .env/*
 data/*
 config.ini
-*/logs/*
+logs/*
+*.pyc
+exported/*

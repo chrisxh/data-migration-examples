@@ -1,34 +1,15 @@
 import logging
-import logging.config
-import yaml
 
 import json
 import re
 import requests 
 
-from ConfigParser import SafeConfigParser
-
-from utils import fieldval, XmlReader
-
-
-configDict = yaml.load(open('logging-config.yml', 'r'))
-logging.config.dictConfig(configDict)
-
+from xml_utils import fieldval, XmlReader
+from utils import read_all_pages, get_auth_key
+  
 import_logger = logging.getLogger('import_log')
 logger  = logging.getLogger('console')
 
-
-
-def read_all_pages(url, headers=None):
-    while True:
-        logger.debug('read_all_pages: %s' % url)
-        r = requests.get(url, headers=headers)
-        resp = json.loads(r.content)
-
-        yield resp['results']
-        url = resp.get('next')
-        if not url:
-            break
 
 
 class EmpClient(object):
@@ -175,8 +156,17 @@ def cleanup_data(reader):
 
 
 
-def run(client, reader, limit=None):
+def run(config, limit=None):
     # read all existing, don't send a request if data is already there 
+    url = config.get('careerleaf', 'url')
+    key_secret = key_secret =  get_auth_key(config) 
+    file_name = config.get('employers', 'file')
+
+    client = EmpClient(url, key_secret)
+    
+    reader = XmlReader(file_name)
+    reader = cleanup_data(reader)
+
     
     total = 0
     success_count = 0
@@ -213,26 +203,6 @@ def run(client, reader, limit=None):
 
     logger.info('parsed {} records, {} are successfull, {} are failed, {} skipped'.format(total, success_count, (total - success_count), skipped))
 
-
-
-def get_config():
-    from ConfigParser import SafeConfigParser
-    config = SafeConfigParser()
-    config.read('config.ini')
-    return config
-
-if __name__ == '__main__':
-    config = get_config()
-    url = config.get('destination', 'url')
-    key_secret = '{}/{}'.format(config.get('destination', 'api_key'), config.get('destination', 'api_secret'))
-    file_name = config.get('source', 'file')
-
-    client = EmpClient(url, key_secret)
-    
-    reader = XmlReader(file_name)
-    reader = cleanup_data(reader)
-
-    run(client, reader)
 
 
 # TODO: delete example    
