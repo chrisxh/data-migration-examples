@@ -1,0 +1,12 @@
+[careerleaf]
+url = http://localhost
+api_key = AKXXXXXXX
+api_secret = yyyyyyyyyyy
+
+[employers]
+file = employers/data_sample.xml
+
+
+[jobseekers-export]
+save_dir = exported
+# import_limit = 2

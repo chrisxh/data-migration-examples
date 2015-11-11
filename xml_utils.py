@@ -20,6 +20,7 @@ def elemtext(node, path):
     else:
         return None
 
+
 def fieldval(node, field):
     val = elemtext(node, field)
     if val and val not in ['NULL',]:
