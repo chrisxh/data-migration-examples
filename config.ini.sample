@@ -7,6 +7,6 @@ api_secret = yyyyyyyyyyy
 file = employers/data_sample.xml
 
 
-[jobseeker-export]
+[jobseekers-export]
 save_dir = exported
 # import_limit = 2

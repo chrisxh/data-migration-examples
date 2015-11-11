@@ -23,17 +23,24 @@ def config_get_safe(config, section, key, default=None):
         return default
 
 
+def disable_ssl_warning():
+    import requests.packages.urllib3
+    requests.packages.urllib3.disable_warnings()    
+
 
 class ReaderClient(object):
     def __init__(self, config):
         self.url_base = config.get('careerleaf', 'url')
+        if self.url_base.startswith('https'):
+            disable_ssl_warning()
+
         self.key_secret = get_auth_key(config) 
         self.save_dir = config.get('jobseekers-export', 'save_dir')
 
         self.list_url = '{}/app/api/v1/candidates'.format(self.url_base)
 
         self.save_profile_data = config_get_safe(config, 'jobseekers-export', 'save_profile_data',  True)
-        self.import_limit = int(config_get_safe(config, 'jobseekers-export', 'import_limit'))
+        self.import_limit = int(config_get_safe(config, 'jobseekers-export', 'import_limit') or 0)
 
 
     def get_headers(self):
@@ -61,7 +68,7 @@ class ReaderClient(object):
                 for chunk in res:
                     f.write(chunk)
         else:
-            logger.error(res.content)
+            logger.error('request failed {}: {}'.format(url, res.content))
 
         # import ipdb; ipdb.set_trace()
 
@@ -76,7 +83,7 @@ class ReaderClient(object):
 
     def save_record(self, cand):
         user = cand['user']
-        prefix = '{}_{}_{}_'.format(cand.get('id'), user['first_name'], user['last_name'])
+        prefix = u'{}_{}_{}_'.format(cand.get('id'), user['first_name'], user['last_name'])
 
         if self.already_imported(prefix):
             logger.debug(u'already saved {}, skipping'.format(prefix))
@@ -84,7 +91,7 @@ class ReaderClient(object):
         # if os.exists()        
         logger.debug(u'processing: {}'.format(prefix))
 
-        data_file = '{}data.json'.format(prefix)
+        data_file = u'{}data.json'.format(prefix)
         with open(os.path.join(self.save_dir, data_file), 'w') as out: 
             out.write(json.dumps(cand,  indent=4))
 
