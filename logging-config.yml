@@ -18,11 +18,17 @@ handlers:
     formatter: simple
     mode: w
     filename: logs/import_errors.log
+  importLogDebugHandler:
+    class : logging.FileHandler
+    level: DEBUG
+    formatter: simple
+    mode: w
+    filename: logs/import_errors.log  
 
 loggers:
   import_log:
     level: DEBUG
-    handlers: [importLogHandler]
+    handlers: [importLogDebugHandler]
     propagate: no
   console:
     level: DEBUG
