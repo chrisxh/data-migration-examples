@@ -107,7 +107,8 @@ class Parser(object):
             'name': company_name, 
             'old_id': self.id, 
             'url': self._fix_url(fieldval(n, 'url')), 
-            'users': users
+            'users': users,
+            'logo_url': fieldval(n, 'logo_url')
         }
 
 
