@@ -1,12 +1,13 @@
 import logging 
 import requests
 import json
+import configparser
 
 logger  = logging.getLogger('import_log')
 
 
 def get_config():
-    from ConfigParser import SafeConfigParser
+    from configparser import SafeConfigParser
     config = SafeConfigParser()
     config.read('config.ini')
     return config
@@ -24,10 +25,11 @@ def read_all_pages(url, headers=None, import_limit=None):
     while True:
         page=page+1
         r = requests.get(url, headers=headers)
-        try: 
-            resp = json.loads(r.content)
+        try:
+            logger.debug(u'GET {} returned {}'.format(url, r.status_code)) 
+            resp = r.json()#json.loads(r.content)
         except:
-            logger.error(u'cannot parse: {}'.format(url))
+            logger.error(u'Invalid JSON from: {}'.format(url))
             failed_records=failed_records+1
             url = url.replace("page={}".format(page-1),"page={}".format(page))
             continue

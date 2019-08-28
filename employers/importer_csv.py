@@ -4,7 +4,7 @@ import json
 import re
 import requests 
 
-from xml_utils import fieldval, XmlReader
+from csv_utils import fieldval, CsvReader
 from utils import read_all_pages, get_auth_key
   
 import_logger = logging.getLogger('import_log')
@@ -64,15 +64,11 @@ class EmpClient(object):
         #print 'saved: {}'.format(data['name'])
         return True
 
-
-
-
-
 class Parser(object):
-    def __init__(self, node, reader):
+    def __init__(self, node):
         self.node = node 
-        company_id = self.id = int(fieldval(node, 'id'))
-        self.users = reader.get_users_for_id(company_id)
+        self.id = int(fieldval(node, 'id'))
+        self.users = node['users']
 
     def record_identity(self):
         """ get identity for the failed record """
@@ -93,25 +89,13 @@ class Parser(object):
         if not company_name: 
             return
 
-        users = [] 
-        for full_name,email in self.users:            
-            name_parts = full_name.split(' ')
-            first_name = name_parts[0]
-            last_name = ' '.join(name_parts[1:])        
-            u = {
-                'first_name': first_name, 
-                'last_name': last_name, 
-                'email': email
-            }
-            users.append(u)
-
-        assert users, "must have at least one user: %s" % self.id
+        assert self.users, "must have at least one user: %s" % self.id
 
         return {
             'name': company_name, 
-            'old_id': self.id, 
+            'old_id': fieldval(n, 'old_id'), 
             'url': self._fix_url(fieldval(n, 'url')), 
-            'users': users,
+            'users': self.users,
             'logo_url': fieldval(n, 'logo_url')
         }
 
@@ -119,45 +103,6 @@ class Parser(object):
 
 from collections import defaultdict
 
-class GroupUsersReader(object):
-    """ quick modification on standard reader that reads though the data 
-        and groups users 
-        it introduces new method, that can be used for the data access 
-    """
-    def __init__(self, reader):
-        self.reader = reader 
-        users = self.users = defaultdict(list)
-
-        nodes = self.nodes = [] 
-        for node in reader.read():
-            id = fieldval(node, 'id')      
-            user = (fieldval(node, 'full_name'), fieldval(node, 'email'))
-
-            if not id or not user[0] or not user[1]:
-                continue
-                        
-            if not id in users:
-                nodes.append(node)
-
-            # print id, user 
-            users[id].append(user)
-
-    def get_users_for_id(self, id):
-        #print 'get_users_for_id: %s, has_key: %s' %  (id, self.users.has_key(id))
-        #print self.users.keys()
-        return self.users[str(id)]
-
-    def read(self):
-        for node in self.nodes:
-            yield node 
-
-
-
-
-def cleanup_data(reader):
-    # users are listed under the same name of the company/id
-    # must be treated as users for the same company 
-    return GroupUsersReader(reader)
 
 
 
@@ -165,22 +110,25 @@ def run(config, limit=None):
     # read all existing, don't send a request if data is already there 
     url = config.get('careerleaf', 'url')
     key_secret = key_secret =  get_auth_key(config) 
-    file_name = config.get('employers', 'file')
+    file_name = config.get('employers-import-csv', 'file')
 
     client = EmpClient(url, key_secret)
     
-    reader = XmlReader(file_name)
-    reader = cleanup_data(reader)
 
-    
+    reader = CsvReader(file_name)
+    #output = reader.read()
+    #print(json.dumps(output, indent=4))
+
     total = 0
     success_count = 0
     skipped = 0
     existing = client.get_existing_ids()
     processed_ids = []
     for node in reader.read():
-        parser = Parser(node, reader)
-        id = parser.id 
+        import_logger.debug(node['id'])
+        parser = Parser(node)
+        id = parser.id
+
         if id in existing:
             import_logger.debug('skipping : %s' % id)
             skipped +=1
@@ -191,15 +139,12 @@ def run(config, limit=None):
 
         data = parser.get_data()
 
-        if data:
-            is_successful = client.save(data)
-            if is_successful:
-                success_count+=1
-                import_logger.info('successful for: {}'.format(data['name']))
-            else:
-                import_logger.error('failed, data problem for: {}'.format(parser.record_identity()))
+        is_successful = client.save(data)
+        if is_successful:
+            success_count+=1
+            import_logger.info('successful for: {}'.format(data['name']))
         else:
-            import_logger.error('failed, could not parse data for: {}'.format(parser.record_identity()))
+            import_logger.error('failed, data problem for: {}'.format(parser.record_identity()))
 
         total +=1
 

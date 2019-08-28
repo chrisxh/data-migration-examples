@@ -24,12 +24,22 @@ handlers:
     formatter: simple
     mode: w
     filename: logs/import_errors.log  
+  exportLogDebugHandler:
+    class : logging.FileHandler
+    level: DEBUG
+    formatter: simple
+    mode: w
+    filename: logs/export_errors.log  
 
 loggers:
   import_log:
     level: DEBUG
     handlers: [importLogDebugHandler]
-    propagate: no
+    propagate: 1
+  export_log:
+    level: DEBUG
+    handlers: [exportLogDebugHandler]
+    propagate: 1
   console:
     level: DEBUG
     handlers: [console]

@@ -7,19 +7,18 @@ import re
 import os.path
 import requests 
 
-import ConfigParser
+import configparser
 
 from utils import get_config, read_all_pages, get_auth_key
 
-
-import_logger = logging.getLogger('import_log')
+export_logger = logging.getLogger('export_log')
 logger  = logging.getLogger('console')
 
 
 def config_get_safe(config, section, key, default=None):
     try:
         return config.get(section, key)
-    except ConfigParser.NoOptionError:
+    except configparser.NoOptionError:
         return default
 
 
@@ -34,7 +33,7 @@ class ReaderClient(object):
         if self.url_base.startswith('https'):
             disable_ssl_warning()
 
-        self.key_secret = get_auth_key(config) 
+        self.key_secret = get_auth_key(config)
         self.save_dir = config.get('jobseekers-export', 'save_dir')
 
         self.list_url = '{}/app/api/v1/candidates'.format(self.url_base)
@@ -92,7 +91,8 @@ class ReaderClient(object):
         logger.debug(u'processing: {}'.format(prefix))
 
         data_file = u'{}data.json'.format(prefix)
-        with open(os.path.join(self.save_dir, data_file), 'w') as out: 
+
+        with open(os.path.join(self.save_dir, data_file), 'x') as out: 
             out.write(json.dumps(cand,  indent=4))
 
         prof = cand['profile']
@@ -113,11 +113,18 @@ class ReaderClient(object):
 
     def run(self):
         logger.debug('starting export, limit={}'.format(self.import_limit))
+        
         url = '{}?page_size={}'.format(self.list_url, 50)
         headers = self.get_headers()
         ids = []
         counter = 0
         stop = False 
+        
+        #create the export directory if not exists
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+            logger.debug('Created export directory {}'.format(self.save_dir))
+
         for page in read_all_pages(url, headers):
             for cand in page:
                 

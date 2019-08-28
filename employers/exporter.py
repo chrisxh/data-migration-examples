@@ -7,16 +7,17 @@ import re
 import os.path
 import requests 
 
-import ConfigParser
+import configparser
 
 from utils import get_config, read_all_pages, get_auth_key
 
-logger  = logging.getLogger('import_log')
+export_logger = logging.getLogger('export_log')
+logger  = logging.getLogger('console')
 
 def config_get_safe(config, section, key, default=None):
     try:
         return config.get(section, key)
-    except ConfigParser.NoOptionError:
+    except configparser.NoOptionError:
         return default
 
 
@@ -32,7 +33,7 @@ class ReaderClient(object):
             disable_ssl_warning()
 
         self.key_secret = get_auth_key(config) 
-        self.save_dir = config.get('employers', 'save_dir')
+        self.save_dir = config.get('employers-export', 'save_dir')
 
         self.list_url = '{}/app/api/v1/employers/'.format(self.url_base)
         self.quick_list_url = '{}/app/api/v1/employers/quick-list'.format(self.url_base)
@@ -67,10 +68,15 @@ class ReaderClient(object):
         ids = []
         counter = 1
         stop = False 
+
+        #create the export directory if not exists
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+            logger.debug('Created export directory {}'.format(self.save_dir))
+
         for page in read_all_pages(url, headers, self.import_limit):
             for cand in page:
                 if self.import_limit and counter > self.import_limit:
-                    print "counter inside--",counter
                     logger.debug('reached limit')
                     stop = True 
                     break 
